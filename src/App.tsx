@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { RightPanel } from './components/RightPanel';
-import { KanbanColumn } from './components/KanBanColumn';
+import { KanbanColumn } from './components/KanbanColumn';
 import { CreateTaskModal } from './components/CreateTaskModal';
 import { TaskDetailDrawer } from './components/TaskDetailDrawer';
 import { useAuth } from './hooks/useAuth';
