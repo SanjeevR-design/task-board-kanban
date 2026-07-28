@@ -19,21 +19,26 @@ export function useAuth() {
           return;
         }
 
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user) {
-          if (isMounted) setUser(session.user);
-        } else {
+        // 2-second timeout guard to prevent infinite loading if Supabase auth hangs
+        const authTimeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Auth timeout')), 2000)
+        );
+
+        const authPromise = (async () => {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) return session.user;
+
           const { data, error } = await supabase.auth.signInAnonymously();
-          if (error) {
-            console.warn('Supabase auth warning, using guest session:', error.message);
-            if (isMounted) setUser({ id: 'guest-demo-user' });
-          } else if (data?.user) {
-            if (isMounted) setUser(data.user);
+          if (error || !data?.user) {
+            return { id: 'guest-demo-user' };
           }
-        }
+          return data.user;
+        })();
+
+        const resolvedUser = (await Promise.race([authPromise, authTimeout])) as User | { id: string };
+        if (isMounted) setUser(resolvedUser);
       } catch (err) {
-        console.warn('Auth initialization fallback:', err);
+        console.warn('Auth initialization fallback triggered:', err);
         if (isMounted) setUser({ id: 'guest-demo-user' });
       } finally {
         if (isMounted) setLoading(false);

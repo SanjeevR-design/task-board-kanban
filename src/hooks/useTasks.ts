@@ -75,7 +75,6 @@ export function useTasks(userId: string | undefined) {
   const [error] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    // Return mock data immediately if Supabase credentials are not configured
     if (!isSupabaseConfigured || !userId) {
       setTasks(INITIAL_TASKS);
       setTeamMembers(INITIAL_MEMBERS);
@@ -86,30 +85,47 @@ export function useTasks(userId: string | undefined) {
     setLoading(true);
 
     try {
-      const { data: membersData } = await supabase
-        .from('team_members')
-        .select('*')
-        .order('created_at', { ascending: true });
+      // 2.5-second timeout guard to prevent infinite loading spinner
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Supabase request timeout')), 2500)
+      );
 
-      const activeMembers = (membersData && membersData.length > 0) ? membersData : INITIAL_MEMBERS;
-      setTeamMembers(activeMembers);
+      const fetchPromise = (async () => {
+        const { data: membersData } = await supabase
+          .from('team_members')
+          .select('*')
+          .order('created_at', { ascending: true });
 
-      const { data: tasksData } = await supabase
-        .from('tasks')
-        .select('*')
-        .order('created_at', { ascending: false });
+        const activeMembers = (membersData && membersData.length > 0) ? membersData : INITIAL_MEMBERS;
 
-      if (tasksData && tasksData.length > 0) {
-        const formattedTasks: Task[] = tasksData.map((t) => {
-          const assignee = activeMembers.find((m) => m.id === t.assignee_id);
+        const { data: tasksData } = await supabase
+          .from('tasks')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        return { activeMembers, tasksData };
+      })();
+
+      const result = (await Promise.race([fetchPromise, timeoutPromise])) as {
+        activeMembers: TeamMember[];
+        tasksData: Task[] | null;
+      };
+
+      setTeamMembers(result.activeMembers);
+
+      if (result.tasksData && result.tasksData.length > 0) {
+        const formattedTasks: Task[] = result.tasksData.map((t) => {
+          const assignee = result.activeMembers.find((m) => m.id === t.assignee_id);
           return { ...t, assignee };
         });
         setTasks(formattedTasks);
       } else {
         setTasks(INITIAL_TASKS);
       }
-    } catch {
+    } catch (err) {
+      console.warn('Supabase fetch timed out or table missing, using demo tasks fallback:', err);
       setTasks(INITIAL_TASKS);
+      setTeamMembers(INITIAL_MEMBERS);
     } finally {
       setLoading(false);
     }
